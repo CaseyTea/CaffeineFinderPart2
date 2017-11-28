@@ -1,10 +1,13 @@
 package edu.orangecoastcollege.cs273.caffeinefinder;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.location.Location;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
@@ -14,6 +17,8 @@ import android.widget.ListView;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.location.LocationListener;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.CameraUpdate;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
@@ -34,13 +39,22 @@ public class CaffeineListActivity extends AppCompatActivity
         GoogleApiClient.OnConnectionFailedListener,
         LocationListener {
 
+    public static final int COARSE_LOCATION_REQUEST_CODE = 100;
     private DBHelper db;
     private List<CaffeineLocation> mAllCaffeineLocationsList;
     private ListView mCaffeineLocationsListView;
     private LocationListAdapter mCaffeineLocationListAdapter;
     private GoogleMap mMap;
 
+
     //TODO: Add member variables for the GoogleApiClient, CaffeineLocation and LocationRequest
+
+    // Google API client is "fused" service for all apps on the device (Location, maps, play store)
+    private GoogleApiClient mGoogleApiClient;
+    // Last location is the last latitude and longitude reported
+    private Location mLastLocation;
+    // Location request are made every x seconds (we configure this)
+    private LocationRequest mLocationRequest;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,8 +71,19 @@ public class CaffeineListActivity extends AppCompatActivity
         mCaffeineLocationsListView.setAdapter(mCaffeineLocationListAdapter);
 
         //TODO: If the connection to the GoogleApiClient is null, build a new one:
+        if (mGoogleApiClient == null) {
+            mGoogleApiClient = new GoogleApiClient.Builder(this)
+                    .addConnectionCallbacks(this)
+                    .addOnConnectionFailedListener(this)
+                    .addApi(LocationServices.API)
+                    .build();
+        }
 
         //TODO: Make a LocationRequest every 10 seconds, with a fastest interval of 1 second with high accuracy
+        mLocationRequest = LocationRequest.create()
+                .setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY)
+                .setInterval(30 * 1000)
+                .setFastestInterval(1 * 1000);
 
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.caffeineMapFragment);
@@ -67,15 +92,36 @@ public class CaffeineListActivity extends AppCompatActivity
 
     //TODO: Override the onStart method to connect to the GoogleApiClient
 
+    @Override
+    protected void onStart() {
+        super.onStart();
+        mGoogleApiClient.connect();
+
+    }
+
     //TODO: Override the onStop method to disconnect from the GoogleApiClient
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        mGoogleApiClient.disconnect();
+    }
 
 
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
+
+    }
+
+    //TODO: Define a new method: private void handleNewLocation(CaffeineLocation newLocation) that will
+    //TODO: update the user's location (custom marker) on the Google Map and rebuild all markers for the Caffeine Locations (standard markers)
+    private void handleNewLocation(Location newLocation) {
+        mLastLocation = newLocation;
+        mMap.clear();
+
         // Add special marker (blue) for "my" location
-        //MBCC Building Lat/Lng (MBCC 135)  33.671028, -117.911305
-        LatLng myCoordinate = new LatLng(33.671028, -117.911305);
+        LatLng myCoordinate = new LatLng(mLastLocation.getLatitude(), mLastLocation.getLongitude());
         mMap.addMarker(new MarkerOptions()
                 .position(myCoordinate)
                 .title("Current Location")
@@ -90,9 +136,6 @@ public class CaffeineListActivity extends AppCompatActivity
             mMap.addMarker(new MarkerOptions().position(coordinate).title(caffeineLocation.getName()));
         }
     }
-
-    //TODO: Define a new method: private void handleNewLocation(CaffeineLocation newLocation) that will
-    //TODO: update the user's location (custom marker) on the Google Map and rebuild all markers for the Caffeine Locations (standard markers)
 
 
     public void viewLocationDetails(View view) {
@@ -110,7 +153,35 @@ public class CaffeineListActivity extends AppCompatActivity
 
     @Override
     public void onConnected(@Nullable Bundle bundle) {
-        
+
+        // Get the last Location from Google services
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+
+            // Don't have either COARSE or FINE permissions, so request them:
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                    COARSE_LOCATION_REQUEST_CODE);
+            return;
+        }
+        mLastLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+        handleNewLocation(mLastLocation);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)
+        {
+            mLastLocation = new Location("");
+            mLastLocation.setLatitude(0.0);
+            mLastLocation.setLongitude(0.0);
+        }
+        else
+        {
+            mLastLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+        }
+        handleNewLocation(mLastLocation);
     }
 
     @Override
@@ -120,11 +191,14 @@ public class CaffeineListActivity extends AppCompatActivity
 
     @Override
     public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
+        Log.e("Caffeine Finder",
+                "Connection to Location services failed: " + connectionResult.getErrorMessage());
 
     }
 
     @Override
     public void onLocationChanged(Location location) {
+        handleNewLocation(location);
 
     }
 
