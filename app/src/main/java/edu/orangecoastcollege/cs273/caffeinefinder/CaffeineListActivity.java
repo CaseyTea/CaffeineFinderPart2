@@ -147,6 +147,7 @@ public class CaffeineListActivity extends AppCompatActivity
             Intent detailsIntent = new Intent(this, CaffeineDetailsActivity.class);
 
             detailsIntent.putExtra("SelectedLocation", selectedCaffeineLocation);
+            detailsIntent.putExtra("MyLocation", mLastLocation);
             startActivity(detailsIntent);
         }
     }
@@ -212,4 +213,33 @@ public class CaffeineListActivity extends AppCompatActivity
     //TODO: Create a new method: public void findClosestCaffeine, which will be invoked when a user clicks on the button
     //TODO: Loop through all the caffeine locations and find the one with the minimum distance.
     //TODO: Then, fire off an Intent to the details page and put both the SelectedLocation and MyLocation
+    public void findClosestCaffeine(View v)
+    {
+        double minDistance = Double.MAX_VALUE;
+        CaffeineLocation closestLocation = null;
+        double distance;
+        Location tempLocation = new Location("");
+
+        // Loop through the list of caffeine souces
+        for (CaffeineLocation c : mAllCaffeineLocationsList)
+        {
+            // convert out caffeine location into a (google) location
+            tempLocation.setLatitude(c.getLatitude());
+            tempLocation.setLongitude(c.getLongitude());
+            distance = tempLocation.distanceTo(mLastLocation);
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                closestLocation = c;
+            }
+        }
+
+        // Intent to the details page
+        Intent detailsIntent = new Intent(this, CaffeineDetailsActivity.class);
+        // Sending over to intent: putting both markers on the map
+        detailsIntent.putExtra("SelectedLocation", closestLocation);
+        detailsIntent.putExtra("MyLocation", mLastLocation);
+        startActivity(detailsIntent);
+    }
+
 }
